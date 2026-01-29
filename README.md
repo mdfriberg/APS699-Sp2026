@@ -23,7 +23,7 @@
    - `pwd`
    - `echo $HOME`
 4. Move to your home directory (if you are not already there):
-   - `cd "$HOME"`
+   - `cd $HOME`
    - `pwd`
 5. Check Python and pip:
    - `python --version`
