@@ -18,7 +18,7 @@
    - `git pull`
 
 ### JupyterLab login
-4. Log in to your JupyterLab account at https://jupyter.cas.hamptonu.edu.
+4. Log in to your JupyterLab account.
 5. Open a terminal inside JupyterLab.
 
 ### Python and libraries check
