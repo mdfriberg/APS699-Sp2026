@@ -1,3 +1,8 @@
+# Conda environment file (conda-only)
+# - Uses name/channels/dependencies fields for conda.
+# - Avoid pip-only packages here to reduce conflicts.
+# - If a package is pip-only, add a `pip:` subsection under dependencies.
+# - Pip-only requirements use requirements.txt, not this YAML.
 name: APS699-Sp2026-Test
 channels:
   - conda-forge
