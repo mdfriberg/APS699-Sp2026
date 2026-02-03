@@ -61,4 +61,3 @@
 - Python: https://www.python.org
 - Conda: https://docs.conda.io
 - Vi editor: https://www.vim.org
-- JupyterHub: https://jupyter.cas.hamptonu.edu
