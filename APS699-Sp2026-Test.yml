@@ -1,0 +1,14 @@
+name: APS699-Sp2026-Test
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - xarray
+  - pandas
+  - cartopy
+  - arm_pyart
+  - satpy
+  - metpy
+  - boto
+  - cfgrib
+  - sharppy
