@@ -1,0 +1,145 @@
+#!/usr/bin/env python3
+# GOES-19 ABI CONUS Radiance
+#
+# This script pulls GOES-19 ABI CONUS (RadC) Level 1b data from the NOAA AWS S3 bucket
+# for July 13, 2025 at 18:00 UTC and plots radiance.
+#
+# Data source: s3://noaa-goes19/ (public, no-sign-request / anonymous access).
+
+# -----------------------------------------------------------------------------
+# 1. Imports and setup
+# -----------------------------------------------------------------------------
+
+import datetime
+import subprocess
+
+import matplotlib.pyplot as plt
+import xarray as xr
+import s3fs
+
+# Optional: install dependencies if needed (run once)
+# pip install s3fs xarray netCDF4 matplotlib
+
+# -----------------------------------------------------------------------------
+# 2. Target time and S3 path
+# GOES-19 path: ABI-L1b-RadC/YYYY/DOY/HH/
+# The bucket is public; no AWS credentials are required.
+# -----------------------------------------------------------------------------
+
+target_utc = datetime.datetime(2025, 7, 13, 18, 0, 0)
+year = target_utc.year
+doy = target_utc.timetuple().tm_yday   # day of year
+hour = target_utc.hour
+
+bucket = "noaa-goes19"
+product = "ABI-L1b-RadC"
+prefix = f"{product}/{year}/{doy:03d}/{hour:02d}/"
+s3_path = f"s3://{bucket}/{prefix}"
+
+print(f"Target: {target_utc} UTC")
+print(f"Day of year: {doy}")
+print(f"S3 prefix: {s3_path}")
+
+# -----------------------------------------------------------------------------
+# 3. List files with AWS CLI (no-sign-request)
+# Equivalent to: aws s3 ls --no-sign-request s3://noaa-goes19/...
+# -----------------------------------------------------------------------------
+
+# Use AWS CLI (no-sign-request) to list; fallback to s3fs if aws not available
+files = []
+try:
+    result = subprocess.run(
+        ["aws", "s3", "ls", "--no-sign-request", s3_path],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    if result.returncode == 0:
+        lines = [l.strip() for l in result.stdout.strip().split("\n") if l.strip()]
+        files = [l.split()[-1] for l in lines if l and "PRE" not in l]
+except (FileNotFoundError, subprocess.TimeoutExpired):
+    pass
+if not files:
+    fs = s3fs.S3FileSystem(anon=True)
+    files = [p.split("/")[-1] for p in fs.ls(prefix.rstrip("/")) if not p.endswith("/")]
+    print("Listed via s3fs (anonymous).")
+
+print(f"Found {len(files)} files in {s3_path}")
+for f in files[:10]:
+    print(f"  {f}")
+if len(files) > 10:
+    print(f"  ... and {len(files) - 10} more")
+
+# -----------------------------------------------------------------------------
+# 4. Open one file and read radiance (anonymous S3)
+# We use s3fs with anonymous access to read a netCDF file directly from S3 (no download).
+# We pick one channel file (e.g. channel 2 visible or channel 7 IR).
+# -----------------------------------------------------------------------------
+
+if not files:
+    raise FileNotFoundError(f"No files at {s3_path}. Check date/time and bucket.")
+
+# Prefer a visible/near-IR channel (e.g. M3C02) for a nice daytime radiance plot
+selected = None
+for f in files:
+    if "M3C02" in f or "M6C02" in f:  # channel 2
+        selected = f
+        break
+if selected is None:
+    selected = files[0]
+
+file_uri = f"s3://{bucket}/{prefix}{selected}"
+print(f"Opening: {selected}")
+
+fs = s3fs.S3FileSystem(anon=True)
+
+with fs.open(file_uri, "rb") as f:
+    ds = xr.open_dataset(f, engine="netcdf4")
+    # Load radiance into memory for plotting
+    if "Rad" in ds:
+        rad = ds["Rad"]
+    else:
+        rad = ds[[v for v in ds.data_vars if "rad" in v.lower()][0]]
+    rad_vals = rad.squeeze().load()  # squeeze in case of single-band dimension
+ds.close()
+print("Radiance dims:", rad_vals.dims)
+print("Shape:", rad_vals.shape)
+
+# -----------------------------------------------------------------------------
+# 5. Plot radiance
+# -----------------------------------------------------------------------------
+
+fig, ax = plt.subplots(figsize=(12, 10))
+
+# Use coordinates from the DataArray if present (GOES ABI often has x, y)
+dims = list(rad_vals.dims)
+if len(dims) >= 2:
+    y_dim, x_dim = dims[-2], dims[-1]
+    x_coord = rad_vals[x_dim].values if x_dim in rad_vals.coords else None
+    y_coord = rad_vals[y_dim].values if y_dim in rad_vals.coords else None
+else:
+    x_dim = y_dim = dims[0]
+    x_coord = y_coord = None
+
+if x_coord is not None and y_coord is not None:
+    im = ax.pcolormesh(x_coord, y_coord, rad_vals.values, cmap="gray", shading="auto")
+else:
+    im = ax.pcolormesh(rad_vals.values, cmap="gray", shading="auto")
+
+cbar_label = rad_vals.attrs.get("long_name", "Radiance") or "Radiance"
+units = rad_vals.attrs.get("units", "")
+if units:
+    cbar_label += f" ({units})"
+plt.colorbar(im, ax=ax, label=cbar_label)
+ax.set_xlabel(x_dim)
+ax.set_ylabel(y_dim)
+ax.set_title(f"GOES-19 ABI CONUS Radiance — {target_utc.strftime('%Y-%m-%d %H:%M')} UTC\n{selected}")
+ax.set_aspect("equal")
+plt.tight_layout()
+plt.show()
+
+# -----------------------------------------------------------------------------
+# 6. Optional: list bucket root (same as aws s3 ls --no-sign-request s3://noaa-goes19/)
+# Uncomment and run to see top-level prefixes.
+# -----------------------------------------------------------------------------
+# subprocess.run(["aws", "s3", "ls", "--no-sign-request", "s3://noaa-goes19/"], timeout=30)
